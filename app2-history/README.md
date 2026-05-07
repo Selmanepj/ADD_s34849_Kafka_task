@@ -10,8 +10,7 @@ Single-file HTML app — no installation, no server needed.
 
 - Any modern web browser (Chrome 60+, Firefox 55+, Edge 79+, Safari 13+)
 - A valid API key from `https://add.piotrkojalowicz.dev/`
-
-No Python, Node.js, or any other runtime required.
+- Python 3 (for the local proxy)
 
 ---
 
@@ -19,7 +18,6 @@ No Python, Node.js, or any other runtime required.
 
 ```bash
 git clone <repository-url>
-# No npm install or pip install needed
 ```
 
 ---
@@ -34,19 +32,17 @@ To clear it: DevTools → Application → Local Storage → delete `add_api_key`
 
 ## How to Run
 
-Open the file directly in your browser:
-
-```
-app2-history/index.html
-```
-
-Double-click in Explorer, or serve locally:
+The API does not allow cross-origin browser requests, so use the local proxy and a local file server.
 
 ```bash
-# Python 3
+# Terminal 1: start the proxy
+python proxy_server.py
+
+# Terminal 2: serve the files
 python -m http.server 8080
-# then open http://localhost:8080/app2-history/
 ```
+
+Open: `http://localhost:8080/app2-history/`
 
 ---
 
@@ -66,7 +62,7 @@ python -m http.server 8080
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/stream?ticker=X&api_key=KEY` | SSE live stream — used to accumulate history |
+| `GET /api/stream?ticker=X&api_key=KEY` | SSE live stream — used to accumulate history (via local proxy) |
 
 Data retention note: the server discards ticks older than ~10 minutes, so the app collects
 real-time data and you should download before the session ends.

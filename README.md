@@ -21,11 +21,17 @@ Both apps are **zero-dependency single HTML files** — just open in any modern 
 ## Quick Start
 
 1. **Get your API key** from `https://add.piotrkojalowicz.dev/` (class password: `A@d-$01`)
-2. **Open** `app1-dashboard/index.html` or `app2-history/index.html` directly in a browser
-3. **Paste your API key** into the UI form — it is never stored in the code
-4. Select tickers and connect
-
-No server, no `npm install`, no Python required.
+2. **Start the local proxy** (required because the API does not allow browser CORS):
+    ```bash
+    python proxy_server.py
+    ```
+3. **Serve the files**:
+    ```bash
+    python -m http.server 8080
+    ```
+4. **Open** `http://localhost:8080/app1-dashboard/` or `http://localhost:8080/app2-history/`
+5. **Paste your API key** into the UI form — it is never stored in the code
+6. Select tickers and connect
 
 ---
 
@@ -36,7 +42,8 @@ No server, no `npm install`, no Python required.
 | `GET /api/stream?ticker=X` | App 1 (live updates), App 2 (history collection) |
 | `GET /api/latest?ticker=X` | App 2 (optional fallback polling) |
 
-Authentication: `api_key=<KEY>` query parameter (browser-compatible).
+Authentication: `api_key=<KEY>` query parameter (browser-compatible). The local proxy also forwards
+the key via `X-API-Key` for compatibility.
 
 ---
 
@@ -55,6 +62,13 @@ s34849_kafka/
     ├── README.md
     └── screenshots/
 ```
+
+---
+
+## Rate Limit Note
+
+The API limits requests per key (after the first few, about 1 request every 10 seconds). If you
+open many streams at once, you can hit HTTP 429. Start with 1-2 tickers and add more slowly.
 
 ---
 

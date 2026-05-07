@@ -9,8 +9,7 @@ Single-file HTML app — no installation, no server needed.
 
 - Any modern web browser (Chrome 60+, Firefox 55+, Edge 79+, Safari 13+)
 - A valid API key from `https://add.piotrkojalowicz.dev/`
-
-No Python, Node.js, or any other runtime required.
+- Python 3 (for the local proxy)
 
 ---
 
@@ -18,7 +17,6 @@ No Python, Node.js, or any other runtime required.
 
 ```bash
 git clone <repository-url>
-# No npm install or pip install needed
 ```
 
 ---
@@ -35,20 +33,17 @@ To clear it, open DevTools → Application → Local Storage → delete `add_api
 
 ## How to Run
 
-Simply open the file in your browser:
-
-```
-app1-dashboard/index.html
-```
-
-Double-click the file in Explorer, or drag it into a browser tab.  
-You can also serve it locally with any static file server:
+The API does not allow cross-origin browser requests, so use the local proxy and a local file server.
 
 ```bash
-# Python 3
+# Terminal 1: start the proxy
+python proxy_server.py
+
+# Terminal 2: serve the files
 python -m http.server 8080
-# then open http://localhost:8080/app1-dashboard/
 ```
+
+Open: `http://localhost:8080/app1-dashboard/`
 
 ---
 
@@ -56,7 +51,7 @@ python -m http.server 8080
 
 1. Enter your API key and select one or more tickers from the 50-company list
 2. Click **Connect & Stream Live**
-3. The app opens an `EventSource` connection to `/api/stream?ticker=X` for each selected ticker
+3. The app opens an `EventSource` connection to `/stream?ticker=X` for each selected ticker
 4. Each card updates in real-time showing:
    - **Ticker symbol** and company name
    - **Current price** with ▲/▼ change indicator and percentage
@@ -71,7 +66,7 @@ python -m http.server 8080
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/stream?ticker=X&api_key=KEY` | Live SSE tick stream for ticker X |
+| `GET /api/stream?ticker=X&api_key=KEY` | Live SSE tick stream for ticker X (via local proxy) |
 
 Events format:
 ```
