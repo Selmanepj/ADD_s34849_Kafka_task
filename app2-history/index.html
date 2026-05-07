@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock History Downloader</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px;
+      background: #161b22; border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 18px; color: #f0f6fc; display: flex; align-items: center; gap: 8px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .stat-pill { background: #1f2937; padding: 4px 10px; border-radius: 99px; font-size: 12px; color: #8b949e; }
+    .stat-pill span { color: #58a6ff; font-weight: 700; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #484f58; display: inline-block; }
+    .status-dot.live { background: #56d364; animation: blink 1.8s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Main layout: sidebar + content ── */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 260px; min-width: 260px;
+      background: #161b22; border-right: 1px solid #30363d;
+      padding: 16px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    #sidebar::-webkit-scrollbar { width: 4px; }
+    #sidebar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+    .sb-label { font-size: 12px; font-weight: 700; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+
+    .api-input {
+      width: 100%; padding: 7px 10px;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
+      color: #c9d1d9; font-size: 13px; font-family: monospace;
+    }
+    .api-input:focus { outline: none; border-color: #58a6ff; }
+
+    .search-box {
+      width: 100%; padding: 6px 10px;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
+      color: #c9d1d9; font-size: 12px; margin-bottom: 6px;
+    }
+    .search-box:focus { outline: none; border-color: #58a6ff; }
+
+    .ticker-list {
+      max-height: 220px; overflow-y: auto;
+      background: #0d1117; border: 1px solid #30363d;
+      border-radius: 5px; padding: 6px;
+    }
+    .ticker-list::-webkit-scrollbar { width: 3px; }
+    .ticker-list::-webkit-scrollbar-thumb { background: #30363d; }
+
+    .tick-lbl {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 6px; border-radius: 3px; cursor: pointer;
+      font-size: 12px; font-weight: 600; color: #c9d1d9;
+    }
+    .tick-lbl:hover { background: #1f2937; }
+    .tick-lbl input { accent-color: #58a6ff; cursor: pointer; }
+
+    .mini-row { display: flex; gap: 6px; }
+    .btn-mini {
+      flex: 1; padding: 4px 0; border-radius: 3px;
+      border: 1px solid #30363d; background: transparent;
+      color: #8b949e; font-size: 11px; cursor: pointer;
+    }
+    .btn-mini:hover { background: #21262d; color: #c9d1d9; }
+
+    .range-row { display: flex; align-items: center; gap: 8px; }
+    .range-row input[type=range] { flex: 1; accent-color: #58a6ff; }
+    .range-val { font-size: 13px; font-weight: 700; color: #58a6ff; min-width: 42px; text-align: right; }
+
+    .btn-start {
+      width: 100%; padding: 10px; border: none; border-radius: 6px;
+      font-size: 14px; font-weight: 700; cursor: pointer; transition: background .2s;
+    }
+    .btn-start.go   { background: #238636; color: #fff; }
+    .btn-start.go:hover { background: #2ea043; }
+    .btn-start.stop { background: #da3633; color: #fff; }
+    .btn-start.stop:hover { background: #f85149; }
+
+    .dl-section { display: flex; flex-direction: column; gap: 6px; }
+    .btn-dl {
+      width: 100%; padding: 8px; border: 1px solid #30363d;
+      border-radius: 5px; background: #21262d;
+      color: #c9d1d9; font-size: 12px; cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-dl:hover { background: #2d333b; }
+    .btn-dl:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Content area ── */
+    #content {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    .chart-wrap {
+      height: 280px; flex-shrink: 0;
+      padding: 16px 20px 8px;
+      border-bottom: 1px solid #21262d;
+      position: relative;
+    }
+    .chart-empty-msg {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: #484f58; font-size: 14px; pointer-events: none;
+    }
+
+    /* ── Table ── */
+    .table-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 20px 6px; flex-shrink: 0;
+    }
+    .table-title { font-size: 13px; font-weight: 700; color: #8b949e; }
+    .row-count { font-size: 12px; color: #484f58; }
+
+    .table-wrap { flex: 1; overflow-y: auto; padding: 0 20px 16px; }
+    .table-wrap::-webkit-scrollbar { width: 5px; }
+    .table-wrap::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      padding: 8px 10px; text-align: left;
+      background: #161b22; color: #8b949e;
+      font-weight: 600; font-size: 12px;
+      border-bottom: 1px solid #30363d;
+      position: sticky; top: 0; z-index: 1;
+    }
+    tbody tr { border-bottom: 1px solid #1c2128; }
+    tbody tr:hover { background: #161b22; }
+    tbody td { padding: 7px 10px; color: #c9d1d9; }
+    td.ticker-cell { font-weight: 700; color: #58a6ff; }
+    td.up   { color: #56d364; }
+    td.down { color: #f85149; }
+
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 150px; color: #484f58; gap: 6px;
+    }
+    .empty-state p { font-size: 14px; }
+
+    .err-msg { color: #f85149; font-size: 12px; margin-top: 4px; }
+
+    /* Color palette for tickers */
+    .c0 { color: #58a6ff; } .c1 { color: #f78166; } .c2 { color: #56d364; }
+    .c3 { color: #e3b341; } .c4 { color: #bc8cff; } .c5 { color: #39d353; }
+    .c6 { color: #ff7b72; } .c7 { color: #79c0ff; }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div class="topbar">
+  <h1>📊 Stock History Downloader <span class="status-dot" id="statusDot"></span></h1>
+  <div class="topbar-right">
+    <span class="stat-pill">Ticks: <span id="statTicks">0</span></span>
+    <span class="stat-pill">Tickers: <span id="statTickers">0</span></span>
+    <span class="stat-pill" id="statRange">Range: —</span>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <div id="sidebar">
+
+    <!-- API Key -->
+    <div>
+      <div class="sb-label">API Key</div>
+      <input class="api-input" type="password" id="apiKey" placeholder="Paste your key…" autocomplete="off">
+      <p id="sbErr" class="err-msg"></p>
+    </div>
+
+    <!-- Tickers -->
+    <div>
+      <div class="sb-label">Tickers</div>
+      <input class="search-box" type="text" id="searchBox" placeholder="Search…">
+      <div class="ticker-list" id="tickerList"></div>
+      <div class="mini-row" style="margin-top:6px">
+        <button class="btn-mini" onclick="selectAll()">All</button>
+        <button class="btn-mini" onclick="clearSel()">None</button>
+        <button class="btn-mini" onclick="quickPick()">Top 5</button>
+      </div>
+    </div>
+
+    <!-- Time range -->
+    <div>
+      <div class="sb-label">View / Export range</div>
+      <div class="range-row">
+        <input type="range" id="timeRange" min="1" max="10" value="5" oninput="onRangeChange()">
+        <span class="range-val" id="rangeLabel">5 min</span>
+      </div>
+      <div style="font-size:11px;color:#484f58;margin-top:4px">Filters the chart &amp; table view (collection continues)</div>
+    </div>
+
+    <!-- Start/Stop -->
+    <button class="btn-start go" id="startBtn" onclick="toggleCollect()">▶ Start Collecting</button>
+
+    <!-- Downloads -->
+    <div class="dl-section">
+      <div class="sb-label">Export</div>
+      <button class="btn-dl" id="btnCsv" onclick="downloadCSV()" disabled>⬇ Download CSV</button>
+      <button class="btn-dl" id="btnJson" onclick="downloadJSON()" disabled>⬇ Download JSON</button>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- ── Content ── -->
+  <div id="content">
+
+    <div class="chart-wrap">
+      <canvas id="mainChart"></canvas>
+      <div class="chart-empty-msg" id="chartMsg">Select tickers and click Start Collecting</div>
+    </div>
+
+    <div class="table-header">
+      <span class="table-title">Tick History</span>
+      <span class="row-count" id="rowCount">0 rows</span>
+    </div>
+    <div class="table-wrap">
+      <table id="dataTable">
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Timestamp</th><th>Price</th>
+            <th>Currency</th><th>Volume</th><th>Seq</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="6"><div class="empty-state"><p>No data yet</p></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /layout -->
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const BASE = 'https://add.piotrkojalowicz.dev';
+const MAX_TABLE_ROWS = 500;
+const CHART_COLORS = [
+  'rgb(88,166,255)', 'rgb(247,129,102)', 'rgb(86,211,100)',
+  'rgb(227,179,65)', 'rgb(188,140,255)', 'rgb(57,211,83)',
+  'rgb(255,123,114)', 'rgb(121,192,255)'
+];
+
+const TICKERS = [
+  {t:'ACME',n:'ACME Corp.'},{t:'ALFA',n:'Alfa Technologies'},{t:'BETA',n:'Beta Retail Group'},
+  {t:'CASH',n:'CashBank'},{t:'CLOUD',n:'CloudNine'},{t:'COAL',n:'Coal Energy'},
+  {t:'COPR',n:'Copper Mining Co.'},{t:'DATA',n:'DataWorks'},{t:'DEVS',n:'DevStudio'},
+  {t:'DRON',n:'Dronix'},{t:'ECO',n:'EcoPower'},{t:'EDU',n:'EduNext'},
+  {t:'ENRG',n:'Energo'},{t:'FARM',n:'FarmFoods'},{t:'FINX',n:'FinX'},
+  {t:'FOOD',n:'FoodBox'},{t:'FUEL',n:'FuelOne'},{t:'GAME',n:'GameForge'},
+  {t:'GRIN',n:'GreenInvest'},{t:'HEAL',n:'HealTech'},{t:'HOME',n:'HomeBuild'},
+  {t:'HYPE',n:'Hype Media'},{t:'INSR',n:'InsureCo'},{t:'IOT',n:'IoT Systems'},
+  {t:'JET',n:'Jet Logistics'},{t:'LABS',n:'Labs Research'},{t:'LEND',n:'Lendify'},
+  {t:'LOGI',n:'LogiWare'},{t:'MALL',n:'Mall Retail'},{t:'MEDI',n:'MediCare'},
+  {t:'META',n:'MetaCom'},{t:'MOBI',n:'MobiTel'},{t:'MOVE',n:'MoveNow'},
+  {t:'NET',n:'Netlink'},{t:'NOVA',n:'Nova Ventures'},{t:'OILS',n:'OilSands'},
+  {t:'PARK',n:'Park Realty'},{t:'PHAR',n:'Pharmax'},{t:'PLNT',n:'Plantio'},
+  {t:'PROD',n:'Prodigo'},{t:'QBIT',n:'QBit Quantum'},{t:'RAIL',n:'Rail Cargo'},
+  {t:'ROBO',n:'RoboMakers'},{t:'SAFE',n:'SafeSecurity'},{t:'SHIP',n:'ShipIt'},
+  {t:'SHOP',n:'ShopNow'},{t:'SOLR',n:'Solaris'},{t:'TEL',n:'TelcoPlus'},
+  {t:'TRVL',n:'TravelBee'},{t:'WATR',n:'WaterWorks'}
+];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let apiKey     = '';
+let collecting = false;
+let sources    = {};    // ticker → EventSource
+let retTimers  = {};    // ticker → setTimeout handle
+let allData    = [];    // [{ticker, ts, price, currency, volume, seq}]
+let tickerIdx  = {};    // ticker → color index
+let mainChart  = null;
+let renderTimer = null;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+const saved = localStorage.getItem('add_api_key');
+if (saved) document.getElementById('apiKey').value = saved;
+
+function buildTickerList() {
+  const q    = document.getElementById('searchBox').value.toLowerCase();
+  const list = document.getElementById('tickerList');
+  list.innerHTML = '';
+  TICKERS
+    .filter(({t, n}) => t.toLowerCase().includes(q) || n.toLowerCase().includes(q))
+    .forEach(({t, n}) => {
+      const lbl = document.createElement('label');
+      lbl.className = 'tick-lbl'; lbl.title = n;
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.name = 'ticker'; cb.value = t;
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(t));
+      list.appendChild(lbl);
+    });
+}
+
+function selectAll() {
+  document.querySelectorAll('input[name=ticker]').forEach(c => c.checked = true);
+}
+function clearSel() {
+  document.querySelectorAll('input[name=ticker]').forEach(c => c.checked = false);
+}
+function quickPick() {
+  clearSel();
+  ['ACME','ALFA','CLOUD','DATA','FINX'].forEach(t => {
+    const cb = document.querySelector(`input[value="${t}"]`);
+    if (cb) cb.checked = true;
+  });
+}
+
+document.getElementById('searchBox').addEventListener('input', buildTickerList);
+buildTickerList();
+
+// ─── Chart init ───────────────────────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  mainChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [] },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { color: '#8b949e', boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#484f58', maxTicksLimit: 8, font: { size: 11 } },
+          grid:  { color: '#21262d' }
+        },
+        y: {
+          ticks: { color: '#8b949e', font: { size: 11 } },
+          grid:  { color: '#21262d' }
+        }
+      }
+    }
+  });
+}
+initChart();
+
+// ─── Start / Stop ─────────────────────────────────────────────────────────────
+function toggleCollect() {
+  if (collecting) {
+    stopCollect();
+  } else {
+    startCollect();
+  }
+}
+
+function startCollect() {
+  apiKey = document.getElementById('apiKey').value.trim();
+  const errEl = document.getElementById('sbErr');
+  if (!apiKey) { errEl.textContent = 'API key required'; return; }
+  const selected = [...document.querySelectorAll('input[name=ticker]:checked')].map(c => c.value);
+  if (!selected.length) { errEl.textContent = 'Select at least one ticker'; return; }
+  errEl.textContent = '';
+
+  localStorage.setItem('add_api_key', apiKey);
+  collecting = true;
+  allData = [];
+  tickerIdx = {};
+
+  selected.forEach((t, i) => {
+    tickerIdx[t] = i % CHART_COLORS.length;
+  });
+
+  // Reset chart datasets
+  mainChart.data.datasets = selected.map((t, i) => ({
+    label: t,
+    data: [],
+    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length].replace('rgb', 'rgba').replace(')', ',0.08)'),
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.3,
+    fill: false
+  }));
+  mainChart.update('none');
+
+  document.getElementById('chartMsg').style.display = 'none';
+  document.getElementById('statusDot').className = 'status-dot live';
+  document.getElementById('statTickers').textContent = selected.length;
+
+  const btn = document.getElementById('startBtn');
+  btn.textContent = '■ Stop Collecting';
+  btn.className = 'btn-start stop';
+
+  // Open SSE streams (staggered)
+  selected.forEach((t, i) => {
+    setTimeout(() => openStream(t), i * 350);
+  });
+
+  // Batch UI refresh every 2 s
+  renderTimer = setInterval(refreshUI, 2000);
+}
+
+function stopCollect() {
+  collecting = false;
+  Object.values(sources).forEach(es => es.close());
+  Object.values(retTimers).forEach(id => clearTimeout(id));
+  sources = {}; retTimers = {};
+  clearInterval(renderTimer);
+
+  document.getElementById('statusDot').className = 'status-dot';
+  const btn = document.getElementById('startBtn');
+  btn.textContent = '▶ Start Collecting';
+  btn.className = 'btn-start go';
+}
+
+// ─── SSE stream ───────────────────────────────────────────────────────────────
+function openStream(ticker) {
+  if (!collecting) return;
+  const url = `${BASE}/api/stream?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
+  const es = new EventSource(url);
+  sources[ticker] = es;
+
+  es.addEventListener('tick', ev => {
+    try { storeTick(ticker, JSON.parse(ev.data)); } catch (_) {}
+  });
+
+  es.onerror = () => {
+    es.close();
+    delete sources[ticker];
+    if (collecting) {
+      retTimers[ticker] = setTimeout(() => openStream(ticker), 5000);
+    }
+  };
+}
+
+function storeTick(ticker, d) {
+  allData.push({
+    ticker,
+    ts:       d.ts,
+    price:    d.price,
+    currency: d.currency || 'PLN',
+    volume:   d.volume ?? 0,
+    seq:      d.seq ?? 0
+  });
+  document.getElementById('statTicks').textContent = allData.length;
+  enableDownloads();
+}
+
+// ─── UI Refresh ───────────────────────────────────────────────────────────────
+function onRangeChange() {
+  const v = document.getElementById('timeRange').value;
+  document.getElementById('rangeLabel').textContent = `${v} min`;
+  document.getElementById('statRange').textContent = `Range: ${v} min`;
+  refreshUI();
+}
+
+function refreshUI() {
+  const mins   = parseInt(document.getElementById('timeRange').value);
+  const cutoff = Date.now() - mins * 60 * 1000;
+  const filtered = allData.filter(d => new Date(d.ts).getTime() >= cutoff);
+
+  refreshChart(filtered);
+  refreshTable(filtered);
+}
+
+function refreshChart(rows) {
+  if (!mainChart) return;
+
+  // Group by ticker
+  const byTicker = {};
+  rows.forEach(d => {
+    if (!byTicker[d.ticker]) byTicker[d.ticker] = [];
+    byTicker[d.ticker].push(d);
+  });
+
+  mainChart.data.datasets.forEach(ds => {
+    const ticker = ds.label;
+    const points = (byTicker[ticker] || []);
+    // Downsample to 300 points max for performance
+    const step = Math.max(1, Math.floor(points.length / 300));
+    ds.data = points
+      .filter((_, i) => i % step === 0 || i === points.length - 1)
+      .map(d => ({ x: new Date(d.ts).toLocaleTimeString(), y: d.price }));
+  });
+
+  // Build shared x labels from all datasets
+  if (rows.length > 0) {
+    mainChart.update('none');
+  }
+}
+
+function refreshTable(rows) {
+  // Show most recent MAX_TABLE_ROWS rows, newest first
+  const display = rows.slice(-MAX_TABLE_ROWS).reverse();
+  document.getElementById('rowCount').textContent = `${rows.length} rows`;
+
+  const tbody = document.getElementById('tableBody');
+  if (!display.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><p>No data in selected range</p></div></td></tr>';
+    return;
+  }
+
+  // Build table in one batch
+  const frag = document.createDocumentFragment();
+  display.forEach((d, idx) => {
+    const prev = idx < display.length - 1 ? display[idx + 1] : null;
+    const trend = prev ? (d.price >= prev.price ? 'up' : 'down') : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="ticker-cell">${d.ticker}</td>
+      <td>${new Date(d.ts).toLocaleTimeString()}</td>
+      <td class="${trend}">${d.price.toFixed(2)}</td>
+      <td>${d.currency}</td>
+      <td>${d.volume.toLocaleString()}</td>
+      <td>${d.seq}</td>
+    `;
+    frag.appendChild(tr);
+  });
+  tbody.innerHTML = '';
+  tbody.appendChild(frag);
+}
+
+function enableDownloads() {
+  document.getElementById('btnCsv').disabled  = false;
+  document.getElementById('btnJson').disabled = false;
+}
+
+// ─── Downloads ────────────────────────────────────────────────────────────────
+function getFilteredData() {
+  const mins   = parseInt(document.getElementById('timeRange').value);
+  const cutoff = Date.now() - mins * 60 * 1000;
+  return allData.filter(d => new Date(d.ts).getTime() >= cutoff);
+}
+
+function downloadCSV() {
+  const rows = getFilteredData();
+  if (!rows.length) return alert('No data in the selected range.');
+  const header = 'ticker,ts,price,currency,volume,seq';
+  const lines  = rows.map(r => `${r.ticker},${r.ts},${r.price},${r.currency},${r.volume},${r.seq}`);
+  triggerDownload([header, ...lines].join('\n'), 'text/csv', 'stocks_history.csv');
+}
+
+function downloadJSON() {
+  const rows = getFilteredData();
+  if (!rows.length) return alert('No data in the selected range.');
+  triggerDownload(JSON.stringify(rows, null, 2), 'application/json', 'stocks_history.json');
+}
+
+function triggerDownload(content, mime, filename) {
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
