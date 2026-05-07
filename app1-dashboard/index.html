@@ -190,7 +190,7 @@
 
 <script>
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BASE = 'https://add.piotrkojalowicz.dev';
+const BASE = 'http://localhost:8765/proxy';
 const HISTORY_LEN = 30;
 
 const TICKERS = [
@@ -271,13 +271,18 @@ const saved = localStorage.getItem('add_api_key');
 if (saved) document.getElementById('apiKey').value = saved;
 
 // ─── Connect ──────────────────────────────────────────────────────────────────
-function startStream() {
+async function startStream() {
   apiKey = document.getElementById('apiKey').value.trim();
   const errEl = document.getElementById('setupErr');
   if (!apiKey) { errEl.textContent = 'Please enter your API key.'; return; }
 
   const selected = [...document.querySelectorAll('input[name=ticker]:checked')].map(c => c.value);
   if (!selected.length) { errEl.textContent = 'Select at least one ticker.'; return; }
+
+  const isValid = await validateApiKey(selected[0]);
+  if (!isValid) {
+    errEl.textContent = 'API key check failed. If you opened via file://, serve with http://localhost and try again.';
+  }
 
   errEl.textContent = '';
   localStorage.setItem('add_api_key', apiKey);
@@ -295,15 +300,27 @@ function startStream() {
   });
 }
 
+async function validateApiKey(ticker) {
+  try {
+    const url = `${BASE}/latest?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 function openStream(ticker) {
-  const url = `${BASE}/api/stream?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
+  const url = `${BASE}/stream?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
   const es = new EventSource(url);
   sources[ticker] = es;
   setBadge(ticker, 'connecting', 'Connecting…');
 
-  es.addEventListener('tick', ev => {
+  const onTick = ev => {
     try { handleTick(ticker, JSON.parse(ev.data)); } catch (_) {}
-  });
+  };
+  es.addEventListener('tick', onTick);
+  es.onmessage = onTick;
 
   es.onopen = () => setBadge(ticker, 'live', '● LIVE');
 

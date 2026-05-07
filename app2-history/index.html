@@ -254,7 +254,7 @@
 
 <script>
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BASE = 'https://add.piotrkojalowicz.dev';
+const BASE = 'http://localhost:8765/proxy';
 const MAX_TABLE_ROWS = 500;
 const CHART_COLORS = [
   'rgb(88,166,255)', 'rgb(247,129,102)', 'rgb(86,211,100)',
@@ -378,13 +378,18 @@ function toggleCollect() {
   }
 }
 
-function startCollect() {
+async function startCollect() {
   apiKey = document.getElementById('apiKey').value.trim();
   const errEl = document.getElementById('sbErr');
   if (!apiKey) { errEl.textContent = 'API key required'; return; }
   const selected = [...document.querySelectorAll('input[name=ticker]:checked')].map(c => c.value);
   if (!selected.length) { errEl.textContent = 'Select at least one ticker'; return; }
   errEl.textContent = '';
+
+  const isValid = await validateApiKey(selected[0]);
+  if (!isValid) {
+    errEl.textContent = 'API key check failed. If you opened via file://, serve with http://localhost and try again.';
+  }
 
   localStorage.setItem('add_api_key', apiKey);
   collecting = true;
@@ -425,6 +430,16 @@ function startCollect() {
   renderTimer = setInterval(refreshUI, 2000);
 }
 
+async function validateApiKey(ticker) {
+  try {
+    const url = `${BASE}/latest?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
 function stopCollect() {
   collecting = false;
   Object.values(sources).forEach(es => es.close());
@@ -441,13 +456,15 @@ function stopCollect() {
 // ─── SSE stream ───────────────────────────────────────────────────────────────
 function openStream(ticker) {
   if (!collecting) return;
-  const url = `${BASE}/api/stream?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
+  const url = `${BASE}/stream?ticker=${ticker}&api_key=${encodeURIComponent(apiKey)}`;
   const es = new EventSource(url);
   sources[ticker] = es;
 
-  es.addEventListener('tick', ev => {
+  const onTick = ev => {
     try { storeTick(ticker, JSON.parse(ev.data)); } catch (_) {}
-  });
+  };
+  es.addEventListener('tick', onTick);
+  es.onmessage = onTick;
 
   es.onerror = () => {
     es.close();
